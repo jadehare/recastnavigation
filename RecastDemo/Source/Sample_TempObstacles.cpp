@@ -17,6 +17,7 @@
 //
 
 #include "Sample_TempObstacles.h"
+#include "AppPaths.h"
 
 #include "DetourCommon.h"
 #include "DetourDebugDraw.h"
@@ -26,6 +27,7 @@
 #include "PartitionedMesh.h"
 #include "Recast.h"
 #include "RecastDebugDraw.h"
+#include "SDL.h"
 #include "SDL_opengl.h"
 #include "Sample.h"
 #include "Tool_ConvexVolume.h"
@@ -38,7 +40,9 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cfloat>
+#include <cstring>
 
 #ifdef WIN32
 #	define snprintf _snprintf
@@ -940,18 +944,22 @@ void Sample_TempObstacles::drawSettingsUI()
 
 	ImGui::Indent();
 
+	const std::string fileName = inputGeometry ? AppPaths::binPath(inputGeometry->filename) : std::string();
+	ImGui::BeginDisabled(fileName.empty());
 	if (ImGui::Button("Save"))
 	{
-		saveAll("all_tiles_tilecache.bin");
+		saveAll(fileName.c_str());
 	}
 
 	if (ImGui::Button("Load"))
 	{
-		dtFreeNavMesh(navMesh);
-		dtFreeTileCache(tileCache);
-		loadAll("all_tiles_tilecache.bin");
-		navQuery->init(navMesh, 2048);
+		loadAll(fileName.c_str());
+		if (navMesh)
+		{
+			navQuery->init(navMesh, 2048);
+		}
 	}
+	ImGui::EndDisabled();
 
 	ImGui::Unindent();
 
@@ -1490,9 +1498,21 @@ void Sample_TempObstacles::saveAll(const char* path) const
 		return;
 	}
 
+	if (!AppPaths::prepareSavePath(path))
+	{
+		if (buildContext)
+		{
+			buildContext->log(RC_LOG_ERROR, "Could not save tile cache to %s: %s", path, SDL_GetError());
+		}
+		return;
+	}
 	FILE* fp = fopen(path, "wb");
 	if (!fp)
 	{
+		if (buildContext)
+		{
+			buildContext->log(RC_LOG_ERROR, "Could not save tile cache to %s: %s", path, std::strerror(errno));
+		}
 		return;
 	}
 
@@ -1561,6 +1581,13 @@ void Sample_TempObstacles::loadAll(const char* path)
 		fclose(fp);
 		return;
 	}
+
+	// Keep the current cache when the requested file is absent or has another format.
+	dtFreeNavMesh(navMesh);
+	dtFreeTileCache(tileCache);
+	navMesh = nullptr;
+	tileCache = nullptr;
+	navQuery->init(nullptr, 2048);
 
 	navMesh = dtAllocNavMesh();
 	if (!navMesh)

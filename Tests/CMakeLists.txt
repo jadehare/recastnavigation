@@ -8,9 +8,10 @@ set_target_properties(Tests PROPERTIES
 
 # Remove warnings-as-errors
 if(MSVC)
-	target_compile_options(Tests PRIVATE /W3 /WX-)
+	target_compile_options(Tests PRIVATE /W3 /WX- /EHsc /GR)
 else()
-	target_compile_options(Tests PRIVATE -Wno-error)
+	# Catch2 requires exceptions for runtime skips, unlike the navigation libraries.
+	target_compile_options(Tests PRIVATE -Wno-error -fexceptions -frtti)
 endif()
 
 target_include_directories(Tests PRIVATE ./Contrib)

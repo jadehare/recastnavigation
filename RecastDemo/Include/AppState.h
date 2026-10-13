@@ -74,8 +74,7 @@ struct AppState
 
 	// Files
 	std::vector<std::string> files;
-	std::string meshesFolder = "Meshes";
-	std::string testCasesFolder = "TestCases";
+	std::string testCasesFolder;
 
 	void resetCamera();
 	void updateWindowSize();

@@ -26,6 +26,48 @@ You can also reference the github actions build script `.github/Build.yaml` for 
 - Open `Build/xcode4/recastnavigation.xcworkspace` in XCode
 - Set the RecastDemo project as the target and build.
 
+For a CMake build, place `SDL2.framework` in `RecastDemo/Bin` (or set
+`-DSDL2_ROOT_DIR=/path/to/framework/parent`), then run from the repository root:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target RecastDemo
+open build/RecastDemo/RecastDemo.app
+```
+
+The CMake app contains SDL2 in `Contents/Frameworks`, and the test cases and font
+in `Contents/Resources`. Sample meshes are copied to a `model` folder next to
+`RecastDemo.app`, and empty `bin` and `gset` folders are created there as well.
+The app can be launched from Finder or any working directory without setting
+`DYLD_FRAMEWORK_PATH`. Keep `model`, `bin`, and `gset` beside the app when moving
+it. `cmake --install build --prefix /path/to/install` installs
+`bin/RecastDemo.app` and the sample meshes in `bin/model`.
+
+On macOS, RecastDemo reads `.obj` models from the `model` folder next to the app.
+Navmesh and tile-cache `.bin` files are saved in the sibling `bin` folder.
+Pressing **9** saves geometry sets in the sibling `gset` folder, and those sets
+appear in the Input Mesh list together with the models. `imgui.ini` is saved in
+`~/Library/Application Support/RecastDemo/`.
+
+Exports use the source model's basename: `model/dungeon.obj` produces
+`bin/dungeon.bin` and `gset/dungeon.gset`. Loading a geometry set uses the name of
+the model it references for subsequent exports. Saving another sample mode for
+the same model replaces its `.bin` file; navmesh and tile-cache formats are
+different, so load the file in the mode that saved it.
+
+Runtime output directories are created when saving. A read-only installation
+can still start and load models, but saving requires write access to the sibling
+`bin` and `gset` folders. Missing external models in geometry sets report a load
+error; only recognized legacy bundled references can fall back to `model`.
+
+On Windows and Linux, RecastDemo reads resources next to the executable and saves
+files in SDL's per-user application directory. Navmesh `.bin` files and
+`imgui.ini` are saved there; pressing **9** saves geometry sets under `Meshes/`.
+Saved sets and user `.obj` files in that directory appear in the Input Mesh list,
+with user files taking precedence over bundled files of the same name. On Windows
+the save directory is `%APPDATA%/RecastDemo/`; on Linux it is
+`$XDG_DATA_HOME/RecastDemo/` (usually `~/.local/share/RecastDemo/`).
+
 ### Linux
 
 - Install SDL2 and its dependencies according to your distro's guidelines.

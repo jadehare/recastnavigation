@@ -40,6 +40,7 @@ if(WIN32)
 elseif(APPLE)
 	# SDL2_INCLUDE_DIR and SDL2_INCLUDE_DIR_PARENT are set by the parent CMakeLists.txt
 	target_include_directories(Contrib PRIVATE ${SDL2_INCLUDE_DIR} ${SDL2_INCLUDE_DIR_PARENT})
+	target_compile_options(Contrib PRIVATE "-F${SDL2_ROOT_DIR}")
 else()
 	# On Linux, link against SDL2 to get the include directories from the imported target
 	target_link_libraries(Contrib PRIVATE SDL2::SDL2)

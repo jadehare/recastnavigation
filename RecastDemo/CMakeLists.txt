@@ -14,6 +14,9 @@ elseif(APPLE)
 		set(SDL2_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
 	endif()
 	set(SDL2_FRAMEWORK_PATH "${SDL2_ROOT_DIR}/SDL2.framework")
+	if(NOT EXISTS "${SDL2_FRAMEWORK_PATH}/SDL2")
+		message(FATAL_ERROR "SDL2.framework not found in ${SDL2_ROOT_DIR}; set SDL2_ROOT_DIR to its parent directory")
+	endif()
 	# Use the framework's Headers directory for <SDL.h> style includes
 	set(SDL2_INCLUDE_DIR "${SDL2_FRAMEWORK_PATH}/Headers")
 	# Also add the parent so <SDL2/SDL.h> style includes work (used internally by SDL headers)
@@ -36,6 +39,7 @@ else()
 endif()
 
 target_sources(RecastDemo PRIVATE
+	Source/AppPaths.cpp
 	Source/AppState.cpp
 	Source/InputGeom.cpp
 	Source/main.cpp
@@ -85,14 +89,50 @@ target_link_libraries(RecastDemo PRIVATE
 
 # SDL2 linking - platform specific
 if(APPLE)
-	target_link_libraries(RecastDemo PRIVATE "-F${SDL2_ROOT_DIR} -framework SDL2")
+	target_link_libraries(RecastDemo PRIVATE "${SDL2_FRAMEWORK_PATH}")
 	target_include_directories(RecastDemo PRIVATE ${SDL2_INCLUDE_DIR} ${SDL2_INCLUDE_DIR_PARENT})
+	target_compile_options(RecastDemo PRIVATE "-F${SDL2_ROOT_DIR}")
+	set_target_properties(RecastDemo PROPERTIES
+		MACOSX_BUNDLE_BUNDLE_NAME RecastDemo
+		MACOSX_BUNDLE_GUI_IDENTIFIER org.recastnavigation.RecastDemo
+		BUILD_WITH_INSTALL_RPATH TRUE
+		INSTALL_RPATH "@executable_path/../Frameworks"
+	)
 else()
 	target_link_libraries(RecastDemo PRIVATE SDL2::SDL2 SDL2::SDL2main)
 endif()
 
 # Copy runtime files to build directory
-if(WIN32)
+if(APPLE)
+	# Font and test cases stay in the bundle. Models are copied beside the .app.
+	file(GLOB_RECURSE demo_resources CONFIGURE_DEPENDS
+		"${CMAKE_CURRENT_SOURCE_DIR}/Bin/TestCases/*"
+	)
+	list(APPEND demo_resources "${CMAKE_CURRENT_SOURCE_DIR}/Bin/DroidSans.ttf")
+	foreach(resource IN LISTS demo_resources)
+		file(RELATIVE_PATH resource_path "${CMAKE_CURRENT_SOURCE_DIR}/Bin" "${resource}")
+		get_filename_component(resource_directory "${resource_path}" DIRECTORY)
+		set_source_files_properties("${resource}" PROPERTIES
+			MACOSX_PACKAGE_LOCATION "Resources/${resource_directory}"
+			HEADER_FILE_ONLY TRUE
+			EXTERNAL_OBJECT FALSE
+		)
+	endforeach()
+	target_sources(RecastDemo PRIVATE ${demo_resources})
+	# file(COPY) preserves the versioned framework's symlinks.
+	# model, bin, and gset sit next to RecastDemo.app so they can be edited without opening the bundle.
+	add_custom_command(TARGET RecastDemo POST_BUILD
+		COMMAND ${CMAKE_COMMAND}
+			"-DSDL2_FRAMEWORK_PATH=${SDL2_FRAMEWORK_PATH}"
+			"-DBUNDLE_DIRECTORY=$<TARGET_BUNDLE_DIR:RecastDemo>"
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopySDL2Framework.cmake"
+		COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:RecastDemo>/../model"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Bin/Meshes" "$<TARGET_BUNDLE_DIR:RecastDemo>/../model"
+		COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:RecastDemo>/../bin"
+		COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:RecastDemo>/../gset"
+		VERBATIM
+	)
+elseif(WIN32)
 	add_custom_command(TARGET RecastDemo POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SDL2_RUNTIME_LIBRARY}" $<TARGET_FILE_DIR:RecastDemo>/
 		COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/Bin/Meshes $<TARGET_FILE_DIR:RecastDemo>/Meshes
@@ -110,10 +150,39 @@ install(TARGETS RecastDemo
 	RUNTIME DESTINATION bin
 	BUNDLE DESTINATION bin
 )
-install(DIRECTORY Bin/Meshes DESTINATION bin)
-install(DIRECTORY Bin/TestCases DESTINATION bin)
-install(FILES Bin/DroidSans.ttf DESTINATION bin)
+if(APPLE)
+	install(DIRECTORY Bin/Meshes/ DESTINATION bin/model)
+else()
+	install(DIRECTORY Bin/Meshes DESTINATION bin)
+	install(DIRECTORY Bin/TestCases DESTINATION bin)
+	install(FILES Bin/DroidSans.ttf DESTINATION bin)
+endif()
 
 if(WIN32)
 	install(FILES "${SDL2_RUNTIME_LIBRARY}" DESTINATION bin)
+endif()
+
+if(APPLE AND RECASTNAVIGATION_TESTS)
+	# Exercise resource/save paths and geometry round trips without opening a window
+	# or writing into the user's actual Application Support directory.
+	add_executable(RecastDemoPathTests
+		Tests/AppPathsTests.cpp
+		Source/AppPaths.cpp
+		Source/InputGeom.cpp
+		Source/PartitionedMesh.cpp
+		Source/PerfTimer.cpp
+		Source/SampleInterfaces.cpp
+	)
+	set_target_properties(RecastDemoPathTests PROPERTIES
+		CXX_STANDARD 20
+		CXX_STANDARD_REQUIRED ON
+		CXX_EXTENSIONS OFF
+		BUILD_RPATH "${SDL2_ROOT_DIR}"
+	)
+	target_include_directories(RecastDemoPathTests PRIVATE Include ${SDL2_INCLUDE_DIR} ${SDL2_INCLUDE_DIR_PARENT})
+	target_compile_options(RecastDemoPathTests PRIVATE "-F${SDL2_ROOT_DIR}" -Wno-deprecated-declarations)
+	target_link_libraries(RecastDemoPathTests PRIVATE
+		"${SDL2_FRAMEWORK_PATH}" OpenGL::GL RecastNavigation::DebugUtils
+	)
+	add_test(NAME RecastDemoPaths COMMAND RecastDemoPathTests)
 endif()

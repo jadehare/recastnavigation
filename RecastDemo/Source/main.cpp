@@ -16,6 +16,7 @@
 // 3. This notice may not be removed or altered from any source distribution.
 //
 
+#include "AppPaths.h"
 #include "AppState.h"
 #include "InputGeom.h"
 #include "SDL.h"
@@ -79,6 +80,16 @@ int main(int /*argc*/, char** /*argv*/)
 		return -1;
 	}
 
+	if (!AppPaths::initialize())
+	{
+		printf("Could not initialize application paths.\nError: %s\n", SDL_GetError());
+		SDL_Quit();
+		return -1;
+	}
+	app.testCasesFolder = AppPaths::resourcePath("TestCases");
+	const std::string fontPath = AppPaths::resourcePath("DroidSans.ttf");
+	const std::string iniPath = AppPaths::savePath("imgui.ini");
+
 	// Use OpenGL render driver.
 	SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
 
@@ -128,8 +139,14 @@ int main(int /*argc*/, char** /*argv*/)
 	ImGui_ImplOpenGL2_Init();
 
 	ImGuiIO& io = ImGui::GetIO();
-	io.Fonts->AddFontFromFileTTF("DroidSans.ttf", 16.0f);  // Size in pixels
-	ImGui::PushFont(io.Fonts->Fonts[0]);
+	io.IniFilename = iniPath.c_str();
+	ImFont* font = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 16.0f);  // Size in pixels
+	if (!font)
+	{
+		printf("Could not load font: %s\n", fontPath.c_str());
+		font = io.Fonts->AddFontDefault();
+	}
+	ImGui::PushFont(font);
 
 	app.updateUIScale();
 
@@ -198,7 +215,12 @@ int main(int /*argc*/, char** /*argv*/)
 						rcVcopy(settings.navMeshBMin, app.inputGeometry->getNavMeshBoundsMin());
 						rcVcopy(settings.navMeshBMax, app.inputGeometry->getNavMeshBoundsMax());
 						app.sample->collectSettings(settings);
-						app.inputGeometry->saveGeomSet(&settings);
+						if (!app.inputGeometry->saveGeomSet(&settings))
+						{
+							const std::string geometryPath = AppPaths::gsetPath(app.inputGeometry->filename);
+							app.buildContext.log(RC_LOG_ERROR, "Could not save geometry to %s", geometryPath.c_str());
+							app.showLog = true;
+						}
 					}
 					break;
 				}
@@ -448,9 +470,7 @@ int main(int /*argc*/, char** /*argv*/)
 
 				if (ImGui::BeginCombo("##inputMesh", app.meshName.c_str(), 0))
 				{
-					app.files.clear();
-					FileIO::scanDirectory(app.meshesFolder, ".obj", app.files);
-					FileIO::scanDirectory(app.meshesFolder, ".gset", app.files);
+					AppPaths::scanMeshes(app.files);
 
 					for (const auto& file : app.files)
 					{
@@ -551,7 +571,7 @@ int main(int /*argc*/, char** /*argv*/)
 
 		if (newMeshSelected)
 		{
-			std::string path = app.meshesFolder + "/" + app.meshName;
+			std::string path = AppPaths::meshPath(app.meshName);
 
 			app.inputGeometry = std::make_unique<InputGeom>();
 			if (!app.inputGeometry->load(&app.buildContext, path))
@@ -632,7 +652,7 @@ int main(int /*argc*/, char** /*argv*/)
 				// Load geom.
 				app.meshName = app.testCase->geomFileName;
 
-				path = app.meshesFolder + "/" + app.meshName;
+				path = AppPaths::meshPath(app.meshName);
 
 				app.inputGeometry = std::make_unique<InputGeom>();
 				if (!app.inputGeometry->load(&app.buildContext, path))

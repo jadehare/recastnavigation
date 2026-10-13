@@ -125,11 +125,14 @@ install(
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/recastnavigation
 )
 
+if (RECASTNAVIGATION_TESTS)
+    enable_testing()
+endif()
+
 if (RECASTNAVIGATION_DEMO)
     add_subdirectory(RecastDemo)
 endif()
 
 if (RECASTNAVIGATION_TESTS)
-    enable_testing()
     add_subdirectory(Tests)
 endif()

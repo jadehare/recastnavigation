@@ -18,13 +18,18 @@
 
 #include "Sample.h"
 
+#include "AppPaths.h"
 #include "DetourCrowd.h"
 #include "DetourDebugDraw.h"
 #include "InputGeom.h"
 #include "RecastDebugDraw.h"
+#include "SDL.h"
 #include "imguiHelpers.h"
 
 #include <imgui.h>
+
+#include <cerrno>
+#include <cstring>
 
 const char* toolNames[] = {
 	"None",
@@ -450,9 +455,21 @@ void Sample::saveAll(const char* path, const dtNavMesh* mesh)
 		return;
 	}
 
+	if (!AppPaths::prepareSavePath(path))
+	{
+		if (buildContext)
+		{
+			buildContext->log(RC_LOG_ERROR, "Could not save navmesh to %s: %s", path, SDL_GetError());
+		}
+		return;
+	}
 	FILE* file = fopen(path, "wb");
 	if (!file)
 	{
+		if (buildContext)
+		{
+			buildContext->log(RC_LOG_ERROR, "Could not save navmesh to %s: %s", path, std::strerror(errno));
+		}
 		return;
 	}
 

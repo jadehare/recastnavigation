@@ -17,6 +17,7 @@
 //
 
 #include "Sample_SoloMesh.h"
+#include "AppPaths.h"
 
 #include "DetourDebugDraw.h"
 #include "DetourNavMeshBuilder.h"
@@ -81,23 +82,28 @@ void Sample_SoloMesh::cleanup()
 
 void Sample_SoloMesh::drawSettingsUI()
 {
-	static const char* fileName = "solo_navmesh.bin";
+	const std::string fileName = inputGeometry ? AppPaths::binPath(inputGeometry->filename) : std::string();
 
 	drawCommonSettingsUI();
 
+	ImGui::BeginDisabled(fileName.empty());
 	if (ImGui::Button("Save"))
 	{
-		saveAll(fileName, navMesh);
+		saveAll(fileName.c_str(), navMesh);
 	}
 
 	ImGui::SameLine();
 
 	if (ImGui::Button("Load"))
 	{
-		dtFreeNavMesh(navMesh);
-		navMesh = loadAll(fileName);
-		navQuery->init(navMesh, 2048);
+		if (dtNavMesh* loadedMesh = loadAll(fileName.c_str()))
+		{
+			dtFreeNavMesh(navMesh);
+			navMesh = loadedMesh;
+			navQuery->init(navMesh, 2048);
+		}
 	}
+	ImGui::EndDisabled();
 
 	ImGui::Text("Build Time: %.1fms", totalBuildTimeMs);
 }

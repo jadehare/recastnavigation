@@ -17,6 +17,7 @@
 //
 
 #include "Sample_TileMesh.h"
+#include "AppPaths.h"
 
 #include "DetourDebugDraw.h"
 #include "DetourNavMesh.h"
@@ -256,19 +257,25 @@ void Sample_TileMesh::drawSettingsUI()
 
 	ImGui::Separator();
 
+	const std::string fileName = inputGeometry ? AppPaths::binPath(inputGeometry->filename) : std::string();
+	ImGui::BeginDisabled(fileName.empty());
 	if (ImGui::Button("Save"))
 	{
-		Sample::saveAll("all_tiles_navmesh.bin", navMesh);
+		Sample::saveAll(fileName.c_str(), navMesh);
 	}
 
 	ImGui::SameLine();
 
 	if (ImGui::Button("Load"))
 	{
-		dtFreeNavMesh(navMesh);
-		navMesh = Sample::loadAll("all_tiles_navmesh.bin");
-		navQuery->init(navMesh, 2048);
+		if (dtNavMesh* loadedMesh = Sample::loadAll(fileName.c_str()))
+		{
+			dtFreeNavMesh(navMesh);
+			navMesh = loadedMesh;
+			navQuery->init(navMesh, 2048);
+		}
 	}
+	ImGui::EndDisabled();
 
 	ImGui::Text("Build Time: %.1fms", totalBuildTimeMs);
 

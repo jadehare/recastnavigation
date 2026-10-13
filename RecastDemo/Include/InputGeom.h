@@ -144,7 +144,7 @@ public:
 private:
 	bool loadMesh(rcContext* ctx, const std::string& filepath);
 	bool loadGeomSet(rcContext* ctx, const std::string& filepath);
-	bool loadGeomSet(rcContext* ctx, char* buffer, size_t bufferLen);
+	bool loadGeomSet(rcContext* ctx, char* buffer, size_t bufferLen, const std::string& directory);
 
 	void clearOffMeshConnections()
 	{

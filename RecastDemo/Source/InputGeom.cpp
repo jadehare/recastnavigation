@@ -18,6 +18,7 @@
 
 #include "InputGeom.h"
 
+#include "AppPaths.h"
 #include "PartitionedMesh.h"
 #include "Recast.h"
 #include "SampleInterfaces.h"
@@ -26,9 +27,23 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 
 namespace
 {
+bool isBundledMeshReference(const std::filesystem::path& reference)
+{
+	const auto directory = reference.lexically_normal().parent_path();
+	if (reference.is_relative())
+	{
+		return directory == "Meshes";
+	}
+	// Old absolute references are recoverable only for bundle resource meshes.
+	return directory.filename() == "Meshes" && directory.parent_path().filename() == "Resources"
+		&& directory.parent_path().parent_path().filename() == "Contents"
+		&& directory.parent_path().parent_path().parent_path().extension() == ".app";
+}
+
 bool intersectSegmentTriangle(const float* sp, const float* sq, const float* a, const float* b, const float* c, float& t)
 {
 	float ab[3];
@@ -382,13 +397,13 @@ bool InputGeom::loadGeomSet(rcContext* ctx, const std::string& filepath)
 		return false;
 	}
 
-	bool result = loadGeomSet(ctx, buffer, bufferLen);
+	bool result = loadGeomSet(ctx, buffer, bufferLen, std::filesystem::u8path(filepath).parent_path().string());
 
 	delete[] buffer;
 	return result;
 }
 
-bool InputGeom::loadGeomSet(rcContext* ctx, char* buffer, size_t bufferLen)
+bool InputGeom::loadGeomSet(rcContext* ctx, char* buffer, size_t bufferLen, const std::string& directory)
 {
 	clearOffMeshConnections();
 	convexVolumes.clear();
@@ -412,7 +427,24 @@ bool InputGeom::loadGeomSet(rcContext* ctx, char* buffer, size_t bufferLen)
 			}
 			if (*name)
 			{
-				if (!loadMesh(ctx, name))
+				const std::filesystem::path reference = std::filesystem::u8path(name);
+				std::filesystem::path meshPath = reference;
+				std::error_code error;
+				if (meshPath.is_relative())
+				{
+					meshPath = std::filesystem::u8path(directory) / meshPath;
+				}
+				if (!std::filesystem::is_regular_file(meshPath, error) && isBundledMeshReference(reference))
+				{
+					// Support legacy "Meshes/foo.obj" references relative to the resource root.
+					meshPath = std::filesystem::u8path(AppPaths::resourcePath(name));
+					if (!std::filesystem::is_regular_file(meshPath, error))
+					{
+						// Recover recognized bundled references after moving the app.
+						meshPath = std::filesystem::u8path(AppPaths::meshPath(reference.filename().string()));
+					}
+				}
+				if (!loadMesh(ctx, meshPath.string()))
 				{
 					return false;
 				}
@@ -523,14 +555,12 @@ bool InputGeom::saveGeomSet(const BuildSettings* settings)
 		return false;
 	}
 
-	// Change extension
-	std::string filepath = filename;
-	size_t extPos = filepath.find_last_of('.');
-	if (extPos != std::string::npos)
+	const std::filesystem::path meshPath = std::filesystem::u8path(filename);
+	const std::string filepath = AppPaths::gsetPath(filename);
+	if (!AppPaths::prepareSavePath(filepath))
 	{
-		filepath = filepath.substr(0, extPos);
+		return false;
 	}
-	filepath += ".gset";
 
 	FILE* fp = fopen(filepath.c_str(), "w");
 	if (!fp)
@@ -538,8 +568,20 @@ bool InputGeom::saveGeomSet(const BuildSettings* settings)
 		return false;
 	}
 
-	// Store mesh filename.
-	fprintf(fp, "f %s\n", filename.c_str());
+	// Bundled meshes retain the resource prefix; other meshes are relative to the set.
+	std::string meshReference = meshPath.filename().string();
+	const std::string bundledReference = "Meshes/" + meshReference;
+	if (meshPath == std::filesystem::u8path(AppPaths::resourcePath(bundledReference)))
+	{
+		meshReference = bundledReference;
+	}
+	else
+	{
+		std::error_code error;
+		const auto relativePath = std::filesystem::relative(meshPath, std::filesystem::u8path(filepath).parent_path(), error);
+		meshReference = error ? filename : relativePath.generic_string();
+	}
+	fprintf(fp, "f %s\n", meshReference.c_str());
 
 	// Store settings if any
 	if (settings)
